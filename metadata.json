@@ -1,0 +1,8 @@
+{
+  "name": "Que Notebook Comprar?",
+  "description": "Seu assistente pessoal inteligente para escolher o notebook ideal. Compare preços, verifique lojas locais e analise especificações em tempo real.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
