@@ -32,6 +32,8 @@ export interface Notebook {
   cons: string[];
   imageUrl?: string;
   estimatedShipping?: string; // e.g., "2-3 dias"
+  url?: string; // Direct link to product
+  store?: string; // Store name
 }
 
 export interface PricePoint {
