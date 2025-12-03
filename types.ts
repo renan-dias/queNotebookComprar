@@ -45,6 +45,7 @@ export interface PricePoint {
 export interface StoreLocation {
   name: string;
   address: string;
+  url?: string; // Google Maps Link
   distance?: string;
   latitude?: number;
   longitude?: number;

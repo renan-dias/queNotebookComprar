@@ -20,6 +20,7 @@ PERFIL DE ATENDIMENTO:
 3. **CONCISÃO**: Seus textos devem ser curtos e diretos. Deixe os detalhes técnicos para os CARDs visuais (JSON).
 
 4. **LINKS E DADOS REAIS**: Use a ferramenta 'googleSearch' para encontrar links de compra ('url'), preços atuais e lojas ('store').
+5. **DADOS LOCAIS**: Se o usuário perguntar onde comprar perto, use 'googleMaps' para indicar lojas reais.
 
 ESTRUTURA DE RESPOSTA (JSON Opcional):
 Se você já tiver informações suficientes para recomendar, gere o JSON abaixo. Se ainda estiver investigando o perfil, NÃO gere o JSON, apenas faça as perguntas no texto.
@@ -95,12 +96,17 @@ export const sendMessage = async (
     
     // Extract Maps Metadata
     const mapLocations = groundingChunks
-        .filter((c: any) => c.maps?.title) 
-        .map((c: any) => ({
-             name: c.maps.title,
-             address: "Ver no Google Maps", 
-             latitude: 0, 
-        }));
+        .filter((c: any) => c.maps?.title || c.groundingChunk?.maps?.title) 
+        .map((c: any) => {
+             const place = c.maps || c.groundingChunk?.maps;
+             return {
+                name: place.title,
+                address: place.address || "Ver no mapa",
+                // Construct a search URL if specific URI is missing
+                url: place.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.title)}`,
+                latitude: 0, 
+             };
+        });
 
 
     // Extract JSON block if present
