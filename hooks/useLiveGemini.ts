@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { GoogleGenAI, Modality } from '@google/genai';
+import type { LiveServerMessage } from '@google/genai';
 import { createPcmBlob, decodeAudioData, base64ToUint8Array } from '../services/audioUtils';
 import { LiveStatus } from '../types';
 
@@ -19,9 +20,20 @@ export const useLiveGemini = () => {
   const sessionRef = useRef<any>(null); // Type is loosely typed as 'any' due to SDK dynamic nature or complex Session type
   const streamRef = useRef<MediaStream | null>(null);
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Initialize AI client lazily or when needed to avoid immediate crashes if process.env is missing at module load
+  const ai = useMemo(() => {
+    const apiKey = process.env.API_KEY;
+    // Fallback to avoid crash during init if key is missing, connection will verify it later
+    return new GoogleGenAI({ apiKey: apiKey || 'placeholder' });
+  }, []);
 
   const connect = useCallback(async () => {
+    if (!process.env.API_KEY) {
+      console.error("Cannot connect: API_KEY missing");
+      setStatus('error');
+      return;
+    }
+    
     try {
       setStatus('connecting');
 
@@ -130,7 +142,7 @@ export const useLiveGemini = () => {
       console.error("Failed to connect live session", error);
       setStatus('error');
     }
-  }, [isMuted]);
+  }, [isMuted, ai]);
 
   const disconnect = useCallback(async () => {
     if (streamRef.current) {

@@ -1,10 +1,6 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
+import type { Tool } from "@google/genai";
 import { Message, RecommendationMetadata } from '../types';
-
-// We must create a new instance each time we need a fresh config, or reuse if static.
-// For browser usage with potentially changing API keys, dynamic instantiation is safer,
-// but here we assume env var is stable.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const SYSTEM_INSTRUCTION = `
 Você é o "TechAdvisor", um consultor especialista em notebooks que age como um ser humano empático e investigativo.
@@ -55,10 +51,19 @@ export const sendMessage = async (
 ): Promise<{ text: string, metadata?: RecommendationMetadata }> => {
   
   try {
+    // Check if key is available
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.error("API_KEY not found in process.env");
+      return { text: "Erro de configuração: Chave de API não encontrada. Por favor, configure a chave API_KEY." };
+    }
+
+    // Initialize inside the function to avoid load-time crashes if environment is not ready
+    const ai = new GoogleGenAI({ apiKey });
     const model = 'gemini-2.5-flash';
     
     // Tools configuration
-    const tools: any[] = [{ googleSearch: {} }];
+    const tools: Tool[] = [{ googleSearch: {} }];
     if (userLocation) {
         // Add maps if we have location, useful for "lojas perto"
         tools.push({ googleMaps: {} });
@@ -79,7 +84,11 @@ export const sendMessage = async (
         systemInstruction: SYSTEM_INSTRUCTION,
         tools,
         toolConfig,
-      }
+      },
+      history: history.map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.text }]
+      }))
     });
 
     const response = await chat.sendMessage({
@@ -103,7 +112,7 @@ export const sendMessage = async (
                 name: place.title,
                 address: place.address || "Ver no mapa",
                 // Construct a search URL if specific URI is missing
-                url: place.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.title)}`,
+                url: place.uri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.title)}`,
                 latitude: 0, 
              };
         });
