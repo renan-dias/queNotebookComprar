@@ -1,47 +1,44 @@
-import { GoogleGenAI } from "@google/genai";
-import type { Tool } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Message, RecommendationMetadata } from '../types';
 
+// We must create a new instance each time we need a fresh config, or reuse if static.
+// For browser usage with potentially changing API keys, dynamic instantiation is safer,
+// but here we assume env var is stable.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
 const SYSTEM_INSTRUCTION = `
-Você é o "TechAdvisor", um consultor especialista em notebooks que age como um ser humano empático e investigativo.
+Você é um especialista em tecnologia e assistente de compras de notebooks chamado "TechAdvisor".
+Sua missão é ajudar o usuário a encontrar o notebook perfeito.
 
-PERFIL DE ATENDIMENTO:
-1. **INVESTIGAÇÃO INTELIGENTE**: Não jogue especificações na cara do usuário. A maioria não sabe o que é "RAM" ou "SSD".
-   - Em vez de perguntar "Quanto de RAM você quer?", pergunte: "Você costuma deixar muitas abas do navegador e programas abertos ao mesmo tempo?"
-   - Em vez de perguntar "Quer placa de vídeo?", pergunte: "Você pretende jogar ou editar vídeos pesados?"
-   - Se o usuário for vago (ex: "Quero um note bom"), FAÇA PERGUNTAS DE USO antes de recomendar.
-
-2. **PRECISÃO CIRÚRGICA**: Quando recomendar, seja específico sobre o modelo (Ex: "Dell Inspiron 15 i1100" e não apenas "Um Dell i5").
-
-3. **CONCISÃO**: Seus textos devem ser curtos e diretos. Deixe os detalhes técnicos para os CARDs visuais (JSON).
-
-4. **LINKS E DADOS REAIS**: Use a ferramenta 'googleSearch' para encontrar links de compra ('url'), preços atuais e lojas ('store').
-5. **DADOS LOCAIS**: Se o usuário perguntar onde comprar perto, use 'googleMaps' para indicar lojas reais.
+REGRAS RÍGIDAS:
+1. Sempre use as ferramentas 'googleSearch' para obter preços e modelos atualizados.
+2. Se o usuário perguntar sobre "onde comprar perto" ou lojas físicas, use 'googleMaps'.
+3. Responda em Português do Brasil.
+4. Tente formatar a resposta para que ela possa ser visualizada.
+5. Seja objetivo, moderno e use termos técnicos de forma acessível.
+6. Ao comparar preços, liste lojas reais encontradas na busca.
 
 ESTRUTURA DE RESPOSTA (JSON Opcional):
-Se você já tiver informações suficientes para recomendar, gere o JSON abaixo. Se ainda estiver investigando o perfil, NÃO gere o JSON, apenas faça as perguntas no texto.
-
+Se você encontrou modelos específicos de notebooks, tente incluir um bloco JSON no final da sua resposta (após o texto explicativo) com a seguinte estrutura para que eu possa gerar gráficos:
 \`\`\`json
 {
   "notebooks": [
     {
-      "name": "Nome do Modelo Completo e Exato",
-      "price": 1234.56,
-      "specs": { "cpu": "i5-12450H", "ram": "8GB", "gpu": "RTX 3050", "storage": "512GB SSD", "screen": "15.6 FHD" },
-      "pros": ["Ótimo para multitarefa (muitas abas)", "Roda jogos leves"],
-      "cons": ["Bateria dura pouco"],
-      "estimatedShipping": "Entrega Rápida",
-      "url": "https://...",
-      "store": "Nome da Loja"
+      "name": "Nome do Modelo",
+      "price": 0.00,
+      "specs": { "cpu": "...", "ram": "...", "gpu": "...", "storage": "...", "screen": "..." },
+      "pros": ["..."],
+      "cons": ["..."],
+      "estimatedShipping": "..."
     }
   ],
   "chartData": [
-    { "name": "Modelo A", "price": 3500, "store": "Amazon" },
-    { "name": "Modelo B", "price": 3200, "store": "Kabum" }
+    { "name": "Modelo A", "price": 1000, "store": "Amazon" },
+    { "name": "Modelo B", "price": 1200, "store": "Kabum" }
   ]
 }
 \`\`\`
-Responda SEMPRE em Português do Brasil.
+Não invente dados. Use apenas dados da pesquisa. Se não achar, não mande o JSON.
 `;
 
 export const sendMessage = async (
@@ -50,20 +47,17 @@ export const sendMessage = async (
   userLocation?: { lat: number; lng: number }
 ): Promise<{ text: string, metadata?: RecommendationMetadata }> => {
   
+  // Prepare contents from history
+  // Note: Gemini 2.5 API might differ slightly in chat history format, 
+  // but generateContent accepts a simple string or parts. 
+  // For simplicity in this demo, we'll concatenate the last few messages or just send the prompt with context.
+  // A proper ChatSession is better.
+  
   try {
-    // Check if key is available
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      console.error("API_KEY not found in process.env");
-      return { text: "Erro de configuração: Chave de API não encontrada. Por favor, configure a chave API_KEY." };
-    }
-
-    // Initialize inside the function to avoid load-time crashes if environment is not ready
-    const ai = new GoogleGenAI({ apiKey });
     const model = 'gemini-2.5-flash';
     
     // Tools configuration
-    const tools: Tool[] = [{ googleSearch: {} }];
+    const tools: any[] = [{ googleSearch: {} }];
     if (userLocation) {
         // Add maps if we have location, useful for "lojas perto"
         tools.push({ googleMaps: {} });
@@ -84,13 +78,14 @@ export const sendMessage = async (
         systemInstruction: SYSTEM_INSTRUCTION,
         tools,
         toolConfig,
-      },
-      history: history.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.text }]
-      }))
+      }
     });
 
+    // Provide some context from previous messages if needed, 
+    // but strict history management can be complex with tools. 
+    // We will just send the user message for this stateless-ish implementation or manage history manually.
+    // For this implementation, we will treat it as a fresh query with context appended if needed.
+    
     const response = await chat.sendMessage({
       message: currentMessage
     });
@@ -105,45 +100,23 @@ export const sendMessage = async (
     
     // Extract Maps Metadata
     const mapLocations = groundingChunks
-        .filter((c: any) => c.maps?.title || c.groundingChunk?.maps?.title) 
-        .map((c: any) => {
-             const place = c.maps || c.groundingChunk?.maps;
-             return {
-                name: place.title,
-                address: place.address || "Ver no mapa",
-                // Construct a search URL if specific URI is missing
-                url: place.uri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.title)}`,
-                latitude: 0, 
-             };
-        });
+        .filter((c: any) => c.maps?.title) // Basic check, real structure might vary
+        .map((c: any) => ({
+             name: c.maps.title,
+             address: "Ver no Google Maps", // API might not return full address in chunk directly without deeper parsing
+             latitude: 0, // Maps grounding usually gives snippet, not raw coords always. Keeping simple.
+        }));
 
 
     // Extract JSON block if present
     let metadata: RecommendationMetadata = {
-        groundingLinks,
-        mapLocations
+        groundingLinks
     };
 
-    // Robust JSON extraction matching ```json ... ``` with DOTALL
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+    const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
     if (jsonMatch && jsonMatch[1]) {
       try {
         const parsed = JSON.parse(jsonMatch[1]);
-        
-        // Sanitize Data
-        if (parsed.notebooks) {
-            parsed.notebooks = parsed.notebooks.map((nb: any) => ({
-                ...nb,
-                price: typeof nb.price === 'string' ? parseFloat(nb.price.replace(/[^\d.]/g, '')) : nb.price,
-            }));
-        }
-        if (parsed.chartData) {
-            parsed.chartData = parsed.chartData.map((d: any) => ({
-                ...d,
-                price: typeof d.price === 'string' ? parseFloat(d.price.replace(/[^\d.]/g, '')) : d.price,
-            }));
-        }
-
         metadata = { ...metadata, ...parsed };
       } catch (e) {
         console.warn("Failed to parse JSON from model response", e);
@@ -151,7 +124,7 @@ export const sendMessage = async (
     }
 
     // Clean text (remove JSON block)
-    const cleanText = text.replace(/```json\s*[\s\S]*?\s*```/, '').trim();
+    const cleanText = text.replace(/```json\n[\s\S]*?\n```/, '').trim();
 
     return { text: cleanText, metadata };
 

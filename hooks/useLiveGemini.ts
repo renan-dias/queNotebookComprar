@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
-import type { LiveServerMessage } from '@google/genai';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { createPcmBlob, decodeAudioData, base64ToUint8Array } from '../services/audioUtils';
 import { LiveStatus } from '../types';
 
@@ -20,20 +19,9 @@ export const useLiveGemini = () => {
   const sessionRef = useRef<any>(null); // Type is loosely typed as 'any' due to SDK dynamic nature or complex Session type
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Initialize AI client lazily or when needed to avoid immediate crashes if process.env is missing at module load
-  const ai = useMemo(() => {
-    const apiKey = process.env.API_KEY;
-    // Fallback to avoid crash during init if key is missing, connection will verify it later
-    return new GoogleGenAI({ apiKey: apiKey || 'placeholder' });
-  }, []);
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const connect = useCallback(async () => {
-    if (!process.env.API_KEY) {
-      console.error("Cannot connect: API_KEY missing");
-      setStatus('error');
-      return;
-    }
-    
     try {
       setStatus('connecting');
 
@@ -52,19 +40,7 @@ export const useLiveGemini = () => {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
           },
-          systemInstruction: `
-            Você é um consultor especialista em notebooks, muito simpático e paciente.
-            Seu objetivo é entender o perfil do usuário através de perguntas sobre o cotidiano dele, evitando jargões técnicos.
-            
-            1. NÃO pergunte "Quanto de memória RAM você quer?". 
-               PERGUNTE "Você costuma abrir muitas janelas ao mesmo tempo ou usa programas pesados?"
-            
-            2. NÃO pergunte "Qual processador você prefere?".
-               PERGUNTE "O notebook é mais para estudos básicos, trabalho de escritório ou edições de vídeo?"
-
-            3. Seja breve e conversacional. Fale como um amigo que entende de tecnologia.
-            4. Fale APENAS em Português do Brasil.
-          `,
+          systemInstruction: 'Você é um consultor de vendas especialista em notebooks. Fale de forma breve, natural e amigável. Ajude o cliente a escolher um laptop.',
         },
         callbacks: {
           onopen: () => {
@@ -142,7 +118,7 @@ export const useLiveGemini = () => {
       console.error("Failed to connect live session", error);
       setStatus('error');
     }
-  }, [isMuted, ai]);
+  }, [isMuted]);
 
   const disconnect = useCallback(async () => {
     if (streamRef.current) {
